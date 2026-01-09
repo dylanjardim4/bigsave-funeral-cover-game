@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Big Save Free Funeral Cover Catch Game</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="ui">
+    <div class="topbar">
+      <div class="brand">Big Save • Free Funeral Cover</div>
+      <div class="top-actions">
+        <button id="howBtn" class="btn ghost" type="button">How it works</button>
+      </div>
+    </div>
+
+    <div class="hud">
+      <div class="hud-item"><span class="label">Month Level</span><span id="monthName" class="value">January</span></div>
+      <div class="hud-item"><span class="label">Unlocked Cover</span><span id="coverValue" class="value">R0</span></div>
+      <div class="hud-item"><span class="label">Products</span><span id="productsCount" class="value">0/20</span></div>
+      <div class="hud-item"><span class="label">Bomb Hits</span><span id="bombsCount" class="value">0/3</span></div>
+    </div>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="startOverlay" class="overlay show">
+    <div class="card">
+      <h1>Catch all 20 Big Save products</h1>
+      <p>Each <b>unique</b> product caught unlocks <b>R1,000</b> cover (up to <b>R20,000</b>) for this month’s level.</p>
+      <p class="small">
+        Drag the trolley left/right (mouse or finger). The trolley can go off-screen.<br/>
+        Products and bombs can appear near (or partly off) the screen edges.<br/>
+        <b>Only bombs matter:</b> if bombs hit the trolley <b>3 times</b>, you restart the month.<br/>
+        Duplicates can appear (they don’t add to your 20).
+      </p>
+      <button id="startBtn" class="btn" type="button">Start</button>
+    </div>
+  </div>
+
+  <div id="gameOverOverlay" class="overlay">
+    <div class="card">
+      <h1 id="gameOverTitle">Game Over</h1>
+      <p id="gameOverReason">You’re out.</p>
+      <button id="restartBtn" class="btn" type="button">Try Again</button>
+    </div>
+  </div>
+
+  <div id="levelOverlay" class="overlay">
+    <div class="card">
+      <h1>Level Complete!</h1>
+      <p>You caught all 20 products for <b id="levelMonth">January</b> and unlocked <b id="levelCover">R20,000</b> (in-game).</p>
+      <p class="small">Next month = next level (harder each month).</p>
+      <button id="nextLevelBtn" class="btn" type="button">Next Month</button>
+    </div>
+  </div>
+
+  <div id="howOverlay" class="overlay">
+    <div class="card">
+      <h1>How it works</h1>
+      <ul>
+        <li>Catch <b>20 unique</b> Big Save products to finish the month.</li>
+        <li>Each unique product = <b>R1,000</b> cover (in-game), up to <b>R20,000</b>.</li>
+        <li><b>No penalty</b> for missing products.</li>
+        <li><b>Only bombs matter:</b> 3 bomb hits = restart.</li>
+        <li>Difficulty ramps up by month (more bombs + faster pace).</li>
+      </ul>
+      <button id="closeHowBtn" class="btn ghost" type="button">Close</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

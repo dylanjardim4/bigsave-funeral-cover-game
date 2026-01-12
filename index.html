@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Big Save Free Funeral Cover Catch Game</title>
+  <title>Big Save Funeral Cover Game</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -11,61 +11,101 @@
     <div class="topbar">
       <div class="brand">Big Save • Free Funeral Cover</div>
       <div class="top-actions">
+        <button id="coverBtn" class="btn ghost" type="button">How To Get Free Funeral Cover</button>
         <button id="howBtn" class="btn ghost" type="button">How it works</button>
       </div>
     </div>
 
     <div class="hud">
-      <div class="hud-item"><span class="label">Month Level</span><span id="monthName" class="value">January</span></div>
-      <div class="hud-item"><span class="label">Unlocked Cover</span><span id="coverValue" class="value">R0</span></div>
-      <div class="hud-item"><span class="label">Products</span><span id="productsCount" class="value">0/20</span></div>
-      <div class="hud-item"><span class="label">Bomb Hits</span><span id="bombsCount" class="value">0/3</span></div>
+      <div class="hud-item">
+        <span class="label">Month Level</span>
+        <span id="monthName" class="value">January</span>
+      </div>
+
+      <div class="hud-item">
+        <span class="label">Unlocked Cover</span>
+        <span id="coverValue" class="value">R0</span>
+      </div>
+
+      <div class="hud-item">
+        <span class="label">Products</span>
+        <span id="productsCount" class="value">0/20</span>
+      </div>
+
+      <div class="hud-item">
+        <span class="label">Bomb Hits</span>
+        <span id="bombsCount" class="value">0/3</span>
+      </div>
     </div>
   </div>
 
   <canvas id="gameCanvas"></canvas>
+  <canvas id="confettiCanvas"></canvas>
 
+  <!-- START -->
   <div id="startOverlay" class="overlay show">
     <div class="card">
-      <h1>Catch all 20 Big Save products</h1>
-      <p>Each <b>unique</b> product caught unlocks <b>R1,000</b> cover (up to <b>R20,000</b>) for this month’s level.</p>
-      <p class="small">
-        Drag the trolley left/right (mouse or finger). The trolley can go off-screen.<br/>
-        Products and bombs can appear near (or partly off) the screen edges.<br/>
-        <b>Only bombs matter:</b> if bombs hit the trolley <b>3 times</b>, you restart the month.<br/>
-        Duplicates can appear (they don’t add to your 20).
+      <h1>Earn up to R20 000 FREE funeral cover at Big Save</h1>
+      <div class="underwrite">Underwritten by Sanlam</div>
+
+      <p class="subhead"><b>
+        Play to see how buying Big Save brands can unlock FREE funeral cover.
+      </b></p>
+
+      <p>
+        Drag the trolley left and right. Catch <b>all 20 products</b> to finish the level.<br/>
+        Hit <b>3 bombs</b> and you’re out — restart and try again.
       </p>
+
+      <p class="small disclaimer">
+        <b>Please note:</b> all currency shown is <b>in-game only</b> and for demonstration purposes — <b>NOT REAL CASH</b>.
+      </p>
+
       <button id="startBtn" class="btn" type="button">Start</button>
     </div>
   </div>
 
+  <!-- GAME OVER -->
   <div id="gameOverOverlay" class="overlay">
     <div class="card">
       <h1 id="gameOverTitle">Game Over</h1>
       <p id="gameOverReason">You’re out.</p>
-      <button id="restartBtn" class="btn" type="button">Try Again</button>
+      <button id="restartBtn" class="btn" type="button">Restart Level</button>
     </div>
   </div>
 
+  <!-- LEVEL COMPLETE -->
   <div id="levelOverlay" class="overlay">
     <div class="card">
       <h1>Level Complete!</h1>
-      <p>You caught all 20 products for <b id="levelMonth">January</b> and unlocked <b id="levelCover">R20,000</b> (in-game).</p>
-      <p class="small">Next month = next level (harder each month).</p>
+
+      <p><b>
+        Congratulations, you caught all 20 products.
+        Did you know if you go to your nearest Big Save and buy those same products you will get R20 000 FREE funeral cover underwritten by Sanlam.
+      </b></p>
+
+      <p class="small">
+        In-game unlocked cover: <b id="levelCover">R20 000</b>
+      </p>
+
       <button id="nextLevelBtn" class="btn" type="button">Next Month</button>
     </div>
   </div>
 
+  <!-- HOW IT WORKS -->
   <div id="howOverlay" class="overlay">
     <div class="card">
       <h1>How it works</h1>
       <ul>
         <li>Catch <b>20 unique</b> Big Save products to finish the month.</li>
-        <li>Each unique product = <b>R1,000</b> cover (in-game), up to <b>R20,000</b>.</li>
+        <li>Each unique product increases your <b>in-game cover</b> up to <b>R20 000</b>.</li>
         <li><b>No penalty</b> for missing products.</li>
-        <li><b>Only bombs matter:</b> 3 bomb hits = restart.</li>
+        <li><b>Only bombs matter:</b> 3 bomb hits = restart the month.</li>
         <li>Difficulty ramps up by month (more bombs + faster pace).</li>
       </ul>
+      <p class="small disclaimer">
+        <b>Please note:</b> all currency shown is <b>in-game only</b> and for demonstration purposes — <b>NOT REAL CASH</b>.
+      </p>
       <button id="closeHowBtn" class="btn ghost" type="button">Close</button>
     </div>
   </div>
@@ -73,3 +113,5 @@
   <script src="game.js"></script>
 </body>
 </html>
+
+

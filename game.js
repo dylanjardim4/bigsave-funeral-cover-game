@@ -1,6 +1,6 @@
 (() => {
   // =========================================================
-  // ASSETS (MATCH YOUR CURRENT NAMES/FOLDERS)
+  // ASSETS (MATCH YOUR CURRENT FILE NAMES)
   // =========================================================
   const ASSETS = {
     background: "assets/background.jpg",
@@ -37,67 +37,52 @@
 
   const RULES = {
     bombsAllowed: 3,
-    coverPerUniqueProduct: 1000
+    coverPerUniqueProduct: 1000 // in-game cover step
   };
 
   // =========================================================
   // SIZE / FEEL
   // =========================================================
-  const SIZE = {
-    trolleyScale: 0.80,
-    productScale: 1.10
-  };
+  const SIZE = { trolleyScale: 0.80, productScale: 1.10 };
 
-  // Trolley can go off-screen by this margin (portion of trolley width)
-  const TROLLEY_OFFSCREEN_MARGIN = 0.70; // 70% of trolley width off-screen is allowed
+  // Trolley can go off-screen by this portion of trolley width
+  const TROLLEY_OFFSCREEN_MARGIN = 0.70;
 
   // Items can spawn partly off-screen (fraction of item size)
-  const ITEM_OFFSCREEN_FRAC = 0.55; // allow half the item to start off-screen
+  const ITEM_OFFSCREEN_FRAC = 0.55;
 
-  // Basket tuning for your trolley PNG (relative to trolley draw rect)
+  // Basket tuning for trolley PNG (relative to trolley draw rect)
   const BASKET = { x: 0.05, y: 0.20, w: 0.72, h: 0.32 };
   const CATCH  = { xPadFrac: 0.10, yPadFrac: 0.10, hFrac: 0.75 };
 
   // =========================================================
-  // DIFFICULTY
-  // - Level 1 starts fairly challenging.
-  // - Gets harder per month.
-  // - Also ramps slightly within a month as you approach 20/20.
+  // DIFFICULTY (Level 1 fairly challenging, ramps by month)
   // =========================================================
   function baseDifficulty(levelIdx) {
     const t = Math.min(1, Math.max(0, levelIdx / 11));
-    const ramp = t * t; // smoother early, stronger later
+    const ramp = t * t;
 
-    // Level 1 already challenging:
-    const spawnIntervalMs = Math.round(720 - ramp * 220); // 720 -> 500
-    const bombChance      = 0.18 + ramp * 0.18;           // 18% -> 36%
-    const minFallSpeed    = 170 + ramp * 120;             // 170 -> 290
-    const maxFallSpeed    = 340 + ramp * 220;             // 340 -> 560
-
-    // duplicates control (still allow, but bias toward unseen)
-    const unseenBias      = 0.76 - ramp * 0.10;           // 76% -> 66%
-
-    return { spawnIntervalMs, bombChance, minFallSpeed, maxFallSpeed, unseenBias };
+    return {
+      spawnIntervalMs: Math.round(720 - ramp * 220), // 720 -> 500
+      bombChance:      0.18 + ramp * 0.18,          // 18% -> 36%
+      minFallSpeed:    170 + ramp * 120,            // 170 -> 290
+      maxFallSpeed:    340 + ramp * 220,            // 340 -> 560
+      unseenBias:      0.76 - ramp * 0.10           // 0.76 -> 0.66 (duplicates exist, not too many)
+    };
   }
 
+  // Slight in-level ramp to keep end-game tense
   function runtimeDifficulty(levelIdx, caughtCount, totalProducts) {
     const base = baseDifficulty(levelIdx);
-
-    // In-level ramp: slightly harder near the end
     const p = totalProducts <= 0 ? 0 : Math.min(1, Math.max(0, caughtCount / totalProducts));
     const ease = p * p;
 
-    const spawnIntervalMs = Math.max(430, Math.round(base.spawnIntervalMs - ease * 70));
-    const bombChance      = Math.min(0.48, base.bombChance + ease * 0.08);
-    const minFallSpeed    = base.minFallSpeed + ease * 35;
-    const maxFallSpeed    = base.maxFallSpeed + ease * 60;
-
     return {
-      spawnIntervalMs,
-      bombChance,
-      minFallSpeed,
-      maxFallSpeed,
-      unseenBias: base.unseenBias
+      spawnIntervalMs: Math.max(430, Math.round(base.spawnIntervalMs - ease * 70)),
+      bombChance:      Math.min(0.48, base.bombChance + ease * 0.08),
+      minFallSpeed:    base.minFallSpeed + ease * 35,
+      maxFallSpeed:    base.maxFallSpeed + ease * 60,
+      unseenBias:      base.unseenBias
     };
   }
 
@@ -106,6 +91,9 @@
   // =========================================================
   const canvas = document.getElementById("gameCanvas");
   const ctx = canvas.getContext("2d");
+
+  const confettiCanvas = document.getElementById("confettiCanvas");
+  const confettiCtx = confettiCanvas.getContext("2d");
 
   const monthNameEl = document.getElementById("monthName");
   const coverValueEl = document.getElementById("coverValue");
@@ -123,11 +111,11 @@
 
   const gameOverTitle = document.getElementById("gameOverTitle");
   const gameOverReason = document.getElementById("gameOverReason");
-  const levelCoverEl = document.getElementById("levelCover");
-  const levelMonthEl = document.getElementById("levelMonth");
 
+  const levelCoverEl = document.getElementById("levelCover");
   const howBtn = document.getElementById("howBtn");
   const closeHowBtn = document.getElementById("closeHowBtn");
+  const coverBtn = document.getElementById("coverBtn");
 
   // =========================================================
   // STATE
@@ -139,39 +127,45 @@
   let lastFrameTs = 0;
 
   let spawnTimerMs = 0;
-  let spawnIntervalMs = 720;
 
   const falling = [];
   const caughtSet = new Set();
   const caughtList = []; // {src, img}
-
-  const flyIns = []; // { img, fromX, fromY, startMs, durationMs, size, targetX, targetY }
+  const flyIns = [];     // animation into trolley
 
   let bombsCaught = 0;
 
-  // Reduce “same product spam” even when duplicates exist
+  // reduce “same product spam”
   let lastSpawnSrc = "";
   let sameInRow = 0;
 
-  // Trolley
+  // trolley
   const trolley = { x: 0, y: 0, w: 0, h: 0, dragging: false, dragOffsetX: 0 };
 
+  // images
   const images = { background: null, trolley: null, bomb: null, products: [] };
+
+  // confetti particles (phone-safe)
+  const confetti = []; // {x,y,vx,vy,rot,vr,size,life,ttl,hue}
+  let confettiUntilMs = 0;
 
   // =========================================================
   // HELPERS
   // =========================================================
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   const rand = (min, max) => min + Math.random() * (max - min);
-  const currency = (n) => "R" + n.toLocaleString("en-ZA");
-  const show = (el) => el.classList.add("show");
-  const hide = (el) => el.classList.remove("show");
+  const show = (el) => el && el.classList.add("show");
+  const hide = (el) => el && el.classList.remove("show");
+
+  function formatRand(n) {
+    return "R" + n.toLocaleString("en-ZA");
+  }
 
   function aabb(ax, ay, aw, ah, bx, by, bw, bh) {
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
   }
 
-  // Encode each segment so spaces + apostrophes work on GitHub Pages
+  // encode each segment (spaces + apostrophes OK on GitHub Pages)
   function toSafeUrl(path) {
     return path.split("/").map(encodeURIComponent).join("/");
   }
@@ -181,7 +175,7 @@
       const img = new Image();
       img.onload = () => resolve(img);
       img.onerror = () => {
-        console.error("❌ Image failed:", src, "=>", toSafeUrl(src));
+        console.error("❌ Image failed to load:", src);
         resolve(null);
       };
       img.src = toSafeUrl(src);
@@ -192,6 +186,7 @@
   // RESIZE
   // =========================================================
   function resize() {
+    // cap DPR to keep phones smooth
     DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     W = Math.floor(window.innerWidth);
     H = Math.floor(window.innerHeight);
@@ -202,6 +197,12 @@
     canvas.style.height = H + "px";
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
+    confettiCanvas.width = Math.floor(W * DPR);
+    confettiCanvas.height = Math.floor(H * DPR);
+    confettiCanvas.style.width = W + "px";
+    confettiCanvas.style.height = H + "px";
+    confettiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
     let baseW = Math.max(260, Math.min(520, W * 0.48));
     baseW *= SIZE.trolleyScale;
 
@@ -211,7 +212,6 @@
 
     if (!trolley.x) trolley.x = W / 2;
 
-    // Allow trolley to go off-screen
     const margin = trolley.w * TROLLEY_OFFSCREEN_MARGIN;
     trolley.x = clamp(trolley.x, -margin, W + margin);
   }
@@ -223,14 +223,14 @@
     const month = MONTHS[levelIndex % MONTHS.length];
     const cover = caughtSet.size * RULES.coverPerUniqueProduct;
 
-    monthNameEl.textContent = month;
-    coverValueEl.textContent = currency(cover);
-    productsCountEl.textContent = `${caughtSet.size}/${ASSETS.products.length}`;
-    bombsCountEl.textContent = `${bombsCaught}/${RULES.bombsAllowed}`;
+    monthNameEl && (monthNameEl.textContent = month);
+    coverValueEl && (coverValueEl.textContent = formatRand(cover));
+    productsCountEl && (productsCountEl.textContent = `${caughtSet.size}/${ASSETS.products.length}`);
+    bombsCountEl && (bombsCountEl.textContent = `${bombsCaught}/${RULES.bombsAllowed}`);
   }
 
   // =========================================================
-  // LEVEL RESET
+  // LEVEL RESET / OVERLAYS
   // =========================================================
   function resetLevelState() {
     falling.length = 0;
@@ -239,35 +239,69 @@
     caughtList.length = 0;
 
     bombsCaught = 0;
-
     spawnTimerMs = 0;
 
     lastSpawnSrc = "";
     sameInRow = 0;
 
-    // start interval from current base difficulty
-    spawnIntervalMs = baseDifficulty(levelIndex).spawnIntervalMs;
+    confetti.length = 0;
+    confettiUntilMs = 0;
 
     updateHUD();
   }
 
   function gameOver(reason) {
     running = false;
-    gameOverTitle.textContent = "Game Over";
-    gameOverReason.textContent = reason;
+    if (gameOverTitle) gameOverTitle.textContent = "Game Over";
+    if (gameOverReason) gameOverReason.textContent = reason;
     show(gameOverOverlay);
   }
 
-  function levelComplete() {
+  // lighter confetti (prevents phone “freeze”)
+  function startConfetti(nowMs) {
+    confetti.length = 0;
+    confettiUntilMs = nowMs + 1800;
+
+    const originX = W * 0.5;
+    const originY = H * 0.28;
+
+    // scale count by screen width
+    const count = Math.max(70, Math.min(140, Math.floor(W * 0.18)));
+
+    for (let i = 0; i < count; i++) {
+      const angle = rand(-Math.PI * 0.95, -Math.PI * 0.05);
+      const speed = rand(220, 650);
+
+      confetti.push({
+        x: originX + rand(-35, 35),
+        y: originY + rand(-10, 10),
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        rot: rand(0, Math.PI * 2),
+        vr: rand(-8, 8),
+        size: rand(5, 10),
+        life: 0,
+        ttl: rand(1.0, 2.0),
+        hue: (i * 29) % 360
+      });
+    }
+  }
+
+  function levelComplete(nowMs) {
     running = false;
-    const month = MONTHS[levelIndex % MONTHS.length];
-    levelMonthEl.textContent = month;
-    levelCoverEl.textContent = currency(ASSETS.products.length * RULES.coverPerUniqueProduct);
+
+    // Guard against missing HTML IDs (prevents crash/freeze)
+    if (levelCoverEl) {
+      const maxCover = ASSETS.products.length * RULES.coverPerUniqueProduct;
+      levelCoverEl.textContent = formatRand(maxCover);
+    }
+
+    startConfetti(nowMs);
     show(levelOverlay);
   }
 
   // =========================================================
-  // DRAW HELPERS (contain) + trolley draw rect for accurate basket
+  // DRAW HELPERS (contain)
   // =========================================================
   function getContainRect(img, boxX, boxY, boxW, boxH) {
     if (!img) return { dx: boxX, dy: boxY, dw: boxW, dh: boxH };
@@ -287,6 +321,7 @@
     ctx.drawImage(img, dx, dy, dw, dh);
   }
 
+  // trolley draw rect
   function getTrolleyDrawRect() {
     const boxX = trolley.x - trolley.w / 2;
     const boxY = trolley.y;
@@ -295,11 +330,12 @@
 
   function getBasketRect() {
     const tr = getTrolleyDrawRect();
-    const bx = tr.dx + tr.dw * BASKET.x;
-    const by = tr.dy + tr.dh * BASKET.y;
-    const bw = tr.dw * BASKET.w;
-    const bh = tr.dh * BASKET.h;
-    return { bx, by, bw, bh };
+    return {
+      bx: tr.dx + tr.dw * BASKET.x,
+      by: tr.dy + tr.dh * BASKET.y,
+      bw: tr.dw * BASKET.w,
+      bh: tr.dh * BASKET.h
+    };
   }
 
   function getCatchRect() {
@@ -307,12 +343,12 @@
     const xPad = bw * CATCH.xPadFrac;
     const yPad = bh * CATCH.yPadFrac;
 
-    const cx = bx + xPad;
-    const cy = by + yPad;
-    const cw = bw - xPad * 2;
-    const ch = (bh - yPad) * CATCH.hFrac;
-
-    return { x: cx, y: cy, w: cw, h: ch };
+    return {
+      x: bx + xPad,
+      y: by + yPad,
+      w: bw - xPad * 2,
+      h: (bh - yPad) * CATCH.hFrac
+    };
   }
 
   // =========================================================
@@ -335,10 +371,12 @@
     const jy = (((i * 29) % 7) - 3) * 0.006;
     const jr = (((i * 13) % 7) - 3) * 0.004;
 
-    const x = clamp(base.x + jx, 0.10, 0.90);
-    const y = base.y + jy;
-
-    return { x, y, s: base.s, r: base.r + jr };
+    return {
+      x: clamp(base.x + jx, 0.10, 0.90),
+      y: base.y + jy,
+      s: base.s,
+      r: base.r + jr
+    };
   }
 
   // =========================================================
@@ -358,11 +396,11 @@
       ? unseen[Math.floor(Math.random() * unseen.length)]
       : Math.floor(Math.random() * total);
 
-    // prevent same product repeating too many times in a row
+    // avoid same product repeating too many times
     for (let attempts = 0; attempts < 4; attempts++) {
       const src = ASSETS.products[idx];
       if (src !== lastSpawnSrc) break;
-      if (sameInRow < 2) break; // allow up to 2 repeats
+      if (sameInRow < 2) break;
       idx = useUnseen
         ? unseen[Math.floor(Math.random() * unseen.length)]
         : Math.floor(Math.random() * total);
@@ -372,7 +410,7 @@
   }
 
   // =========================================================
-  // SPAWN (items can be partly off-screen)
+  // SPAWN (partly off-screen allowed)
   // =========================================================
   function spawnXForItem(size) {
     const off = size * ITEM_OFFSCREEN_FRAC;
@@ -468,7 +506,6 @@
       if (!item.img) continue;
 
       const spot = getPileSpot(i);
-
       const centerX = bx + bw * spot.x;
       const baseY = by + bh * spot.y;
 
@@ -491,6 +528,44 @@
     drawImageContain(images.trolley, boxX, boxY, trolley.w, trolley.h);
   }
 
+  function drawConfetti(nowMs, dt) {
+    confettiCtx.clearRect(0, 0, W, H);
+
+    if (confettiUntilMs <= 0 && confetti.length === 0) return;
+
+    const gravity = 1200;
+
+    for (let i = confetti.length - 1; i >= 0; i--) {
+      const c = confetti[i];
+      c.life += dt;
+
+      c.vy += gravity * dt;
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      c.rot += c.vr * dt;
+
+      if (c.life > c.ttl || c.y > H + 90) {
+        confetti.splice(i, 1);
+        continue;
+      }
+
+      confettiCtx.save();
+      confettiCtx.translate(c.x, c.y);
+      confettiCtx.rotate(c.rot);
+
+      const a = 1 - (c.life / c.ttl);
+      confettiCtx.globalAlpha = Math.max(0, Math.min(1, a));
+
+      // safer hsl syntax
+      confettiCtx.fillStyle = `hsl(${c.hue}, 90%, 60%)`;
+      confettiCtx.fillRect(-c.size / 2, -c.size / 2, c.size, c.size * 0.7);
+
+      confettiCtx.restore();
+    }
+
+    if (nowMs > confettiUntilMs) confettiUntilMs = 0;
+  }
+
   // =========================================================
   // LOOP
   // =========================================================
@@ -502,28 +577,19 @@
     if (running) {
       const diff = runtimeDifficulty(levelIndex, caughtSet.size, ASSETS.products.length);
 
-      // Smoothly adapt spawn interval as difficulty changes
-      spawnIntervalMs = diff.spawnIntervalMs;
-
       spawnTimerMs += dt * 1000;
-      if (spawnTimerMs >= spawnIntervalMs) {
+      if (spawnTimerMs >= diff.spawnIntervalMs) {
         spawnTimerMs = 0;
         spawnItem(diff);
       }
 
-      // Catch rect is based on trolley position (even if trolley off-screen)
       const catchRect = getCatchRect();
 
       for (let i = falling.length - 1; i >= 0; i--) {
         const it = falling[i];
         it.y += it.vy * dt;
 
-        const itemRect = {
-          x: it.x - it.size / 2,
-          y: it.y - it.size / 2,
-          w: it.size,
-          h: it.size
-        };
+        const itemRect = { x: it.x - it.size / 2, y: it.y - it.size / 2, w: it.size, h: it.size };
 
         // Catch check
         if (aabb(catchRect.x, catchRect.y, catchRect.w, catchRect.h, itemRect.x, itemRect.y, itemRect.w, itemRect.h)) {
@@ -537,7 +603,7 @@
               break;
             }
           } else {
-            // Unique -> stack + progress. Duplicate -> just disappears.
+            // unique adds progress; duplicate disappears (no penalty)
             if (!caughtSet.has(it.src)) {
               caughtSet.add(it.src);
               caughtList.push({ src: it.src, img: it.img });
@@ -558,7 +624,7 @@
 
               if (caughtSet.size >= ASSETS.products.length) {
                 falling.splice(i, 1);
-                levelComplete();
+                levelComplete(ts);
                 break;
               }
             }
@@ -567,14 +633,14 @@
           continue;
         }
 
-        // Remove items that fall beyond the bottom (no penalty at all)
-        if (it.y - it.size / 2 > H + 80) {
+        // no missed penalty; cleanup off bottom
+        if (it.y - it.size / 2 > H + 90) {
           falling.splice(i, 1);
         }
       }
     }
 
-    // Render order
+    // render
     ctx.clearRect(0, 0, W, H);
     drawBackground();
     drawFalling();
@@ -582,11 +648,13 @@
     drawStackedInTrolley();
     drawTrolley();
 
+    drawConfetti(ts, dt);
+
     requestAnimationFrame(tick);
   }
 
   // =========================================================
-  // INPUT (drag trolley) — allow off-screen travel
+  // INPUT (drag trolley, allow off-screen)
   // =========================================================
   function pointerPos(e) {
     const rect = canvas.getBoundingClientRect();
@@ -595,11 +663,7 @@
 
   canvas.addEventListener("pointerdown", (e) => {
     const p = pointerPos(e);
-    const tx = trolley.x - trolley.w / 2;
-    const ty = trolley.y;
-
-    // You can grab where the trolley would be (even partly off-screen)
-    if (p.y >= ty && p.y <= ty + trolley.h + 30) {
+    if (p.y >= trolley.y && p.y <= trolley.y + trolley.h + 30) {
       trolley.dragging = true;
       trolley.dragOffsetX = p.x - trolley.x;
       canvas.setPointerCapture(e.pointerId);
@@ -609,7 +673,6 @@
   canvas.addEventListener("pointermove", (e) => {
     if (!trolley.dragging) return;
     const p = pointerPos(e);
-
     const margin = trolley.w * TROLLEY_OFFSCREEN_MARGIN;
     trolley.x = clamp(p.x - trolley.dragOffsetX, -margin, W + margin);
   });
@@ -626,7 +689,7 @@
   // =========================================================
   // BUTTONS
   // =========================================================
-  startBtn.addEventListener("click", () => {
+  startBtn && startBtn.addEventListener("click", () => {
     hide(startOverlay);
     hide(gameOverOverlay);
     hide(levelOverlay);
@@ -634,24 +697,28 @@
     running = true;
   });
 
-  restartBtn.addEventListener("click", () => {
+  restartBtn && restartBtn.addEventListener("click", () => {
     hide(gameOverOverlay);
     resetLevelState();
     running = true;
   });
 
-  nextLevelBtn.addEventListener("click", () => {
+  nextLevelBtn && nextLevelBtn.addEventListener("click", () => {
     hide(levelOverlay);
     levelIndex++;
     resetLevelState();
     running = true;
   });
 
-  howBtn.addEventListener("click", () => show(howOverlay));
-  closeHowBtn.addEventListener("click", () => hide(howOverlay));
+  howBtn && howBtn.addEventListener("click", () => show(howOverlay));
+  closeHowBtn && closeHowBtn.addEventListener("click", () => hide(howOverlay));
+
+  coverBtn && coverBtn.addEventListener("click", () => {
+    window.open("https://bigsave.co.za/big-save-funeral-cover/", "_blank", "noopener,noreferrer");
+  });
 
   // =========================================================
-  // PRELOAD
+  // PRELOAD / INIT
   // =========================================================
   async function preload() {
     images.background = await loadImage(ASSETS.background);
@@ -664,9 +731,6 @@
     }
   }
 
-  // =========================================================
-  // INIT
-  // =========================================================
   window.addEventListener("resize", resize);
 
   (async function init() {

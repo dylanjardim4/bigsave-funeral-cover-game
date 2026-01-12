@@ -37,26 +37,30 @@
 
   const RULES = {
     bombsAllowed: 3,
-    coverPerUniqueProduct: 1000 // in-game cover step
+    coverPerUniqueProduct: 1000 // in-game only
   };
 
   // =========================================================
-  // SIZE / FEEL
+  // VISUAL / SIZE
   // =========================================================
-  const SIZE = { trolleyScale: 0.80, productScale: 1.10 };
+  const SIZE = {
+    trolleyScale: 0.80, // trolley slightly smaller than earlier big one
+    productScale: 1.10  // products slightly bigger
+  };
 
-  // Trolley can go off-screen by this portion of trolley width
+  // trolley off-screen allowance
   const TROLLEY_OFFSCREEN_MARGIN = 0.70;
 
-  // Items can spawn partly off-screen (fraction of item size)
+  // items can spawn partially off-screen
   const ITEM_OFFSCREEN_FRAC = 0.55;
 
-  // Basket tuning for trolley PNG (relative to trolley draw rect)
+  // basket tuning for your trolley PNG (relative to trolley draw rect)
   const BASKET = { x: 0.05, y: 0.20, w: 0.72, h: 0.32 };
   const CATCH  = { xPadFrac: 0.10, yPadFrac: 0.10, hFrac: 0.75 };
 
   // =========================================================
-  // DIFFICULTY (Level 1 fairly challenging, ramps by month)
+  // DIFFICULTY (Level 1 challenging, ramps)
+  // duplicates exist but not too many
   // =========================================================
   function baseDifficulty(levelIdx) {
     const t = Math.min(1, Math.max(0, levelIdx / 11));
@@ -67,11 +71,10 @@
       bombChance:      0.18 + ramp * 0.18,          // 18% -> 36%
       minFallSpeed:    170 + ramp * 120,            // 170 -> 290
       maxFallSpeed:    340 + ramp * 220,            // 340 -> 560
-      unseenBias:      0.76 - ramp * 0.10           // 0.76 -> 0.66 (duplicates exist, not too many)
+      unseenBias:      0.76 - ramp * 0.10           // duplicates exist, but not too many
     };
   }
 
-  // Slight in-level ramp to keep end-game tense
   function runtimeDifficulty(levelIdx, caughtCount, totalProducts) {
     const base = baseDifficulty(levelIdx);
     const p = totalProducts <= 0 ? 0 : Math.min(1, Math.max(0, caughtCount / totalProducts));
@@ -112,7 +115,6 @@
   const gameOverTitle = document.getElementById("gameOverTitle");
   const gameOverReason = document.getElementById("gameOverReason");
 
-  const levelCoverEl = document.getElementById("levelCover");
   const howBtn = document.getElementById("howBtn");
   const closeHowBtn = document.getElementById("closeHowBtn");
   const coverBtn = document.getElementById("coverBtn");
@@ -121,21 +123,19 @@
   // STATE
   // =========================================================
   let W = 0, H = 0, DPR = 1;
-
   let levelIndex = 0;
   let running = false;
   let lastFrameTs = 0;
-
   let spawnTimerMs = 0;
 
   const falling = [];
   const caughtSet = new Set();
-  const caughtList = []; // {src, img}
-  const flyIns = [];     // animation into trolley
+  const caughtList = [];
+  const flyIns = [];
 
   let bombsCaught = 0;
 
-  // reduce “same product spam”
+  // duplicate reducer
   let lastSpawnSrc = "";
   let sameInRow = 0;
 
@@ -145,15 +145,26 @@
   // images
   const images = { background: null, trolley: null, bomb: null, products: [] };
 
-  // confetti particles (phone-safe)
-  const confetti = []; // {x,y,vx,vy,rot,vr,size,life,ttl,hue}
+  // confetti
+  const confetti = [];
   let confettiUntilMs = 0;
+
+  // bomb explosion particles
+  const explosions = []; // {x,y,msLeft,parts:[{x,y,vx,vy,size,life,ttl}]}
+
+  // bomb flash ring
+  const flashRings = []; // {x,y,life,ttl}
+
+  // screen shake
+  let shakeMs = 0;
+  let shakeAmp = 0;
 
   // =========================================================
   // HELPERS
   // =========================================================
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   const rand = (min, max) => min + Math.random() * (max - min);
+
   const show = (el) => el && el.classList.add("show");
   const hide = (el) => el && el.classList.remove("show");
 
@@ -165,7 +176,6 @@
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
   }
 
-  // encode each segment (spaces + apostrophes OK on GitHub Pages)
   function toSafeUrl(path) {
     return path.split("/").map(encodeURIComponent).join("/");
   }
@@ -186,7 +196,6 @@
   // RESIZE
   // =========================================================
   function resize() {
-    // cap DPR to keep phones smooth
     DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     W = Math.floor(window.innerWidth);
     H = Math.floor(window.innerHeight);
@@ -223,14 +232,14 @@
     const month = MONTHS[levelIndex % MONTHS.length];
     const cover = caughtSet.size * RULES.coverPerUniqueProduct;
 
-    monthNameEl && (monthNameEl.textContent = month);
-    coverValueEl && (coverValueEl.textContent = formatRand(cover));
-    productsCountEl && (productsCountEl.textContent = `${caughtSet.size}/${ASSETS.products.length}`);
-    bombsCountEl && (bombsCountEl.textContent = `${bombsCaught}/${RULES.bombsAllowed}`);
+    if (monthNameEl) monthNameEl.textContent = month;
+    if (coverValueEl) coverValueEl.textContent = formatRand(cover);
+    if (productsCountEl) productsCountEl.textContent = `${caughtSet.size}/${ASSETS.products.length}`;
+    if (bombsCountEl) bombsCountEl.textContent = `${bombsCaught}/${RULES.bombsAllowed}`;
   }
 
   // =========================================================
-  // LEVEL RESET / OVERLAYS
+  // RESET / OVERLAYS
   // =========================================================
   function resetLevelState() {
     falling.length = 0;
@@ -247,6 +256,11 @@
     confetti.length = 0;
     confettiUntilMs = 0;
 
+    explosions.length = 0;
+    flashRings.length = 0;
+    shakeMs = 0;
+    shakeAmp = 0;
+
     updateHUD();
   }
 
@@ -257,16 +271,13 @@
     show(gameOverOverlay);
   }
 
-  // lighter confetti (prevents phone “freeze”)
   function startConfetti(nowMs) {
     confetti.length = 0;
     confettiUntilMs = nowMs + 1800;
 
     const originX = W * 0.5;
     const originY = H * 0.28;
-
-    // scale count by screen width
-    const count = Math.max(70, Math.min(140, Math.floor(W * 0.18)));
+    const count = Math.max(80, Math.min(160, Math.floor(W * 0.20)));
 
     for (let i = 0; i < count; i++) {
       const angle = rand(-Math.PI * 0.95, -Math.PI * 0.05);
@@ -289,15 +300,47 @@
 
   function levelComplete(nowMs) {
     running = false;
-
-    // Guard against missing HTML IDs (prevents crash/freeze)
-    if (levelCoverEl) {
-      const maxCover = ASSETS.products.length * RULES.coverPerUniqueProduct;
-      levelCoverEl.textContent = formatRand(maxCover);
-    }
-
     startConfetti(nowMs);
     show(levelOverlay);
+  }
+
+  // =========================================================
+  // BOMB FEEDBACK: VIBRATE + SHAKE + EXPLOSION + FLASH RING
+  // =========================================================
+  function triggerBombFlash(x, y) {
+    flashRings.push({ x, y, life: 0, ttl: 0.12 }); // 120ms pop
+  }
+
+  function triggerBombFeedback(x, y) {
+    triggerBombFlash(x, y);
+
+    // Vibration (works well on Android; iOS may ignore)
+    try {
+      if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+    } catch {}
+
+    // Bigger + longer shake
+    shakeMs = 260;
+    shakeAmp = Math.max(10, Math.min(26, W * 0.035));
+
+    // Bigger explosion spray
+    const parts = [];
+    const count = 26;
+
+    for (let i = 0; i < count; i++) {
+      const ang = rand(0, Math.PI * 2);
+      const spd = rand(240, 820);
+      parts.push({
+        x, y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        size: rand(4, 10),
+        life: 0,
+        ttl: rand(0.28, 0.55)
+      });
+    }
+
+    explosions.push({ x, y, msLeft: 520, parts });
   }
 
   // =========================================================
@@ -321,7 +364,6 @@
     ctx.drawImage(img, dx, dy, dw, dh);
   }
 
-  // trolley draw rect
   function getTrolleyDrawRect() {
     const boxX = trolley.x - trolley.w / 2;
     const boxY = trolley.y;
@@ -363,7 +405,7 @@
       { x: 0.58, y: 0.90, s: 0.72, r:  0.01 },
       { x: 0.22, y: 0.74, s: 0.60, r: -0.03 },
       { x: 0.50, y: 0.76, s: 0.62, r:  0.00 },
-      { x: 0.74, y: 0.76, s: 0.60, r:  0.03 },
+      { x: 0.74, y: 0.76, s: 0.60, r:  0.03 }
     ];
 
     const base = spots[i % spots.length];
@@ -396,11 +438,12 @@
       ? unseen[Math.floor(Math.random() * unseen.length)]
       : Math.floor(Math.random() * total);
 
-    // avoid same product repeating too many times
+    // avoid same product spam 3+ in a row
     for (let attempts = 0; attempts < 4; attempts++) {
       const src = ASSETS.products[idx];
       if (src !== lastSpawnSrc) break;
       if (sameInRow < 2) break;
+
       idx = useUnseen
         ? unseen[Math.floor(Math.random() * unseen.length)]
         : Math.floor(Math.random() * total);
@@ -409,9 +452,6 @@
     return idx;
   }
 
-  // =========================================================
-  // SPAWN (partly off-screen allowed)
-  // =========================================================
   function spawnXForItem(size) {
     const off = size * ITEM_OFFSCREEN_FRAC;
     return rand(-off, W + off);
@@ -528,9 +568,70 @@
     drawImageContain(images.trolley, boxX, boxY, trolley.w, trolley.h);
   }
 
+  function drawExplosions(dt) {
+    for (let i = explosions.length - 1; i >= 0; i--) {
+      const ex = explosions[i];
+      ex.msLeft -= dt * 1000;
+
+      for (let j = ex.parts.length - 1; j >= 0; j--) {
+        const p = ex.parts[j];
+        p.life += dt;
+
+        p.vy += 900 * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+
+        if (p.life > p.ttl) {
+          ex.parts.splice(j, 1);
+          continue;
+        }
+
+        const a = 1 - (p.life / p.ttl);
+        ctx.save();
+        ctx.globalAlpha = a;
+
+        // warm explosion colors
+        const hot = Math.floor(200 + 55 * a);
+        ctx.fillStyle = `rgb(${hot}, ${Math.floor(120 + 80*a)}, ${Math.floor(20 + 40*a)})`;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (ex.msLeft <= 0 || ex.parts.length === 0) explosions.splice(i, 1);
+    }
+  }
+
+  function drawFlashRings(dt) {
+    for (let i = flashRings.length - 1; i >= 0; i--) {
+      const r = flashRings[i];
+      r.life += dt;
+
+      if (r.life >= r.ttl) {
+        flashRings.splice(i, 1);
+        continue;
+      }
+
+      const t = r.life / r.ttl;     // 0 -> 1
+      const a = 1 - t;              // fade out
+      const radius = 12 + t * 92;   // bigger ring
+      const lineW = 12 - t * 10;    // thick -> thin
+
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = Math.max(1, lineW);
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   function drawConfetti(nowMs, dt) {
     confettiCtx.clearRect(0, 0, W, H);
-
     if (confettiUntilMs <= 0 && confetti.length === 0) return;
 
     const gravity = 1200;
@@ -555,8 +656,6 @@
 
       const a = 1 - (c.life / c.ttl);
       confettiCtx.globalAlpha = Math.max(0, Math.min(1, a));
-
-      // safer hsl syntax
       confettiCtx.fillStyle = `hsl(${c.hue}, 90%, 60%)`;
       confettiCtx.fillRect(-c.size / 2, -c.size / 2, c.size, c.size * 0.7);
 
@@ -591,9 +690,11 @@
 
         const itemRect = { x: it.x - it.size / 2, y: it.y - it.size / 2, w: it.size, h: it.size };
 
-        // Catch check
+        // catch check
         if (aabb(catchRect.x, catchRect.y, catchRect.w, catchRect.h, itemRect.x, itemRect.y, itemRect.w, itemRect.h)) {
           if (it.type === "bomb") {
+            triggerBombFeedback(it.x, it.y);
+
             bombsCaught++;
             falling.splice(i, 1);
             updateHUD();
@@ -603,7 +704,6 @@
               break;
             }
           } else {
-            // unique adds progress; duplicate disappears (no penalty)
             if (!caughtSet.has(it.src)) {
               caughtSet.add(it.src);
               caughtList.push({ src: it.src, img: it.img });
@@ -628,25 +728,44 @@
                 break;
               }
             }
+
             falling.splice(i, 1);
           }
           continue;
         }
 
-        // no missed penalty; cleanup off bottom
+        // no missed penalty
         if (it.y - it.size / 2 > H + 90) {
           falling.splice(i, 1);
         }
       }
     }
 
+    // screen shake calc (punchy)
+    let shakeX = 0, shakeY = 0;
+    if (shakeMs > 0) {
+      shakeMs -= dt * 1000;
+      const t = clamp(shakeMs / 260, 0, 1);
+      const amp = shakeAmp * (t * t);
+      shakeX = rand(-amp, amp);
+      shakeY = rand(-amp, amp);
+      if (shakeMs <= 0) { shakeMs = 0; shakeAmp = 0; }
+    }
+
     // render
     ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
     drawBackground();
     drawFalling();
     drawFlyIns(ts);
     drawStackedInTrolley();
     drawTrolley();
+    drawExplosions(dt);
+    drawFlashRings(dt);
+
+    ctx.restore();
 
     drawConfetti(ts, dt);
 
@@ -654,7 +773,7 @@
   }
 
   // =========================================================
-  // INPUT (drag trolley, allow off-screen)
+  // INPUT (drag trolley; trolley can go off-screen)
   // =========================================================
   function pointerPos(e) {
     const rect = canvas.getBoundingClientRect();
@@ -689,33 +808,41 @@
   // =========================================================
   // BUTTONS
   // =========================================================
-  startBtn && startBtn.addEventListener("click", () => {
-    hide(startOverlay);
-    hide(gameOverOverlay);
-    hide(levelOverlay);
-    resetLevelState();
-    running = true;
-  });
+  if (startBtn) {
+    startBtn.addEventListener("click", () => {
+      hide(startOverlay);
+      hide(gameOverOverlay);
+      hide(levelOverlay);
+      resetLevelState();
+      running = true;
+    });
+  }
 
-  restartBtn && restartBtn.addEventListener("click", () => {
-    hide(gameOverOverlay);
-    resetLevelState();
-    running = true;
-  });
+  if (restartBtn) {
+    restartBtn.addEventListener("click", () => {
+      hide(gameOverOverlay);
+      resetLevelState();
+      running = true;
+    });
+  }
 
-  nextLevelBtn && nextLevelBtn.addEventListener("click", () => {
-    hide(levelOverlay);
-    levelIndex++;
-    resetLevelState();
-    running = true;
-  });
+  if (nextLevelBtn) {
+    nextLevelBtn.addEventListener("click", () => {
+      hide(levelOverlay);
+      levelIndex++;
+      resetLevelState();
+      running = true;
+    });
+  }
 
-  howBtn && howBtn.addEventListener("click", () => show(howOverlay));
-  closeHowBtn && closeHowBtn.addEventListener("click", () => hide(howOverlay));
+  if (howBtn) howBtn.addEventListener("click", () => show(howOverlay));
+  if (closeHowBtn) closeHowBtn.addEventListener("click", () => hide(howOverlay));
 
-  coverBtn && coverBtn.addEventListener("click", () => {
-    window.open("https://bigsave.co.za/big-save-funeral-cover/", "_blank", "noopener,noreferrer");
-  });
+  if (coverBtn) {
+    coverBtn.addEventListener("click", () => {
+      window.open("https://bigsave.co.za/big-save-funeral-cover/", "_blank", "noopener,noreferrer");
+    });
+  }
 
   // =========================================================
   // PRELOAD / INIT
